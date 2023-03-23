@@ -20,6 +20,11 @@ public class MasterSecretCallback {
     private static final Logger log = Logger.getLogger(MasterSecretCallback.class.getName());
     private static final String NL = System.getProperty("line.separator");
 
+    private static final FIFOHashMap<String, Integer> map = new FIFOHashMap<String, Integer>(100);
+    //public static void setFIFOHashMapSize(Integer mapSize) {
+    //    map.setSizeLimit(mapSize);
+    //}
+
     private static String secretsFileName;
     public static void setSecretsFileName(String secretsFileName) {
         MasterSecretCallback.secretsFileName = secretsFileName;
@@ -60,13 +65,22 @@ public class MasterSecretCallback {
 
     public static void onKeyDerivation(Object context, SecretKey key) {
         String secretName = TLS13_SECRET_NAMES.get(key.getAlgorithm());
-        if (secretName == null) {
-            return;
-        }
         try {
             Object clientRandom = get(context, "clientHelloRandom");
             String clientRandomBytes = bytesToHex((byte[]) get(clientRandom, "randomBytes"));
-            write(secretName + " " + clientRandomBytes + " " + bytesToHex(key.getEncoded()));
+            String keyIV = bytesToHex(key.getEncoded());
+
+            if (secretName == null) {
+                secretName = "CLIENT_RANDOM";
+                if (map.get(keyIV) == null) {
+                    map.put(keyIV, 1);
+                    write(secretName + " " + clientRandomBytes + " " + keyIV);
+                } else {
+                    log.log(Level.FINE, "Skipped writing duplicate master secret.");
+                }
+            } else {
+                write(secretName + " " + clientRandomBytes + " " + keyIV);
+            }
         } catch (Exception e) {
             log.log(Level.WARNING, "Error retrieving client random secret from " + context, e);
         }
